@@ -1,27 +1,56 @@
-const mysql = require('mysql2/promise');
+const mysql = require('mysql2/promise')
+    , fs = require('fs')
+    , moment = require('moment')
+    , chalk = require('chalk');
 
-const sourceConfig = {
-  host: 'localhost',
-  user: 'root',
-  password: '',
-  database: 'db_nmsitd_dashboard_trello_dev_2023_02_20',
-  port: 3306,
-};
+const configPath = './config.json';
+const config = {};
 
-const targetConfig = {
-  host: 'localhost',
-  user: 'root',
-  password: '',
-  database: '2023tester',
-  port: 3306,
-};
+let appseconds = new Date().getTime();
+function log(...message) {
+  var curseconds = new Date().getTime();
+  var dur = curseconds - appseconds;
+  appseconds = new Date().getTime();
+  var timestamp = chalk.grey(moment().format("YYYY-MM-DD HH:mm:ss"));
+  console.log(timestamp, ...message, chalk.blueBright.dim("+" + dur + "ms"));
+}
+
+function terminate(...message) {
+  var curseconds = new Date().getTime();
+  var dur = curseconds - appseconds;
+  appseconds = new Date().getTime();
+  var timestamp = chalk.grey(moment().format("YYYY-MM-DD HH:mm:ss"));
+  console.log(timestamp, chalk.red(...message), chalk.yellow.dim("+" + dur + "ms"));
+  process.exit(1);
+}
+
+if (!fs.existsSync(configPath)) {
+  terminate(`${configPath} not found.`, `make your own copy from ${configPath}.example then configure it based on your system spec.`);
+}
+
+var sourceConfig;
+var targetConfig;
+var loadedConfig = {};
+try {
+  loadedConfig = require(configPath);
+
+  sourceConfig = loadedConfig.source;
+  targetConfig = loadedConfig.target;
+  log(`${configPath} file loaded successfully`);
+} catch (e) {
+  terminate("malformed loadedConfig file in", args.file, e);
+}
+
+// terminate('DEV: end');
 
 async function main() {
   try {
     // Connect to source database
+    log("attempting to connect to source");
     const sourceConnection = await mysql.createConnection(sourceConfig);
 
     // Find Target Database
+    log("attempting to connect to target");
     const targetConnection = await mysql.createConnection({
       host: targetConfig.host,
       user: targetConfig.user,
@@ -40,22 +69,24 @@ async function main() {
       const [tableDefinitionRows] = await sourceConnection.execute(`SHOW CREATE TABLE ${tableName}`);
       const tableDefinition = tableDefinitionRows[0]['Create Table'];
       await targetConnection.execute(tableDefinition);
+      log(chalk.gray(`created table ${tableName} in target successfully`));
     }
 
     // Migrate data from source tables to target tables
     for (const tableName of tableNames) {
       await targetConnection.execute(`INSERT INTO ${targetConfig.database}.${tableName} SELECT * FROM ${sourceConfig.database}.${tableName}`);
+      log(chalk.gray(`transferred data to table ${tableName} in target successfully`));
     }
 
     targetConnection.execute("SET foreign_key_checks = 1");
 
-    console.log('Database copied successfully');
+    log(chalk.green('Database copied successfully'));
 
     // Close connections
     await sourceConnection.end();
     await targetConnection.end();
   } catch (error) {
-    console.error(error);
+    terminate(error);
     process.exit(1);
   }
 }

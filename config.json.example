@@ -1,0 +1,16 @@
+{
+  "source": {
+    "host": "localhost",
+    "user": "root",
+    "password": "",
+    "database": "db_source",
+    "port": 3306
+  },
+  "target": {
+    "host": "localhost",
+    "user": "root",
+    "password": "",
+    "database": "db_target",
+    "port": 3306
+  }
+}
