@@ -64,18 +64,21 @@ async function main() {
     const [tableRows] = await sourceConnection.execute('SHOW TABLES');
     const tableNames = tableRows.map(row => row[`Tables_in_${sourceConfig.database}`]);
 
+    let executionCounter = 0;
+    let total = tableNames.length * 2;
+
     // Create target tables from source tables
     for (const tableName of tableNames) {
       const [tableDefinitionRows] = await sourceConnection.execute(`SHOW CREATE TABLE ${tableName}`);
       const tableDefinition = tableDefinitionRows[0]['Create Table'];
       await targetConnection.execute(tableDefinition);
-      log(chalk.gray(`created table ${tableName} in target successfully`));
+      log(chalk.cyan(`[${++executionCounter}/${total}]`),`created table ${tableName} in target successfully`);
     }
 
     // Migrate data from source tables to target tables
     for (const tableName of tableNames) {
       await targetConnection.execute(`INSERT INTO ${targetConfig.database}.${tableName} SELECT * FROM ${sourceConfig.database}.${tableName}`);
-      log(chalk.gray(`transferred data to table ${tableName} in target successfully`));
+      log(chalk.cyan(`[${++executionCounter}/${total}]`), `transferred data to table ${tableName} in target successfully`);
     }
 
     targetConnection.execute("SET foreign_key_checks = 1");
