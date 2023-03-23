@@ -1,4 +1,8 @@
 {
+  "application": {
+    "mysqlPath": "D:\\mariadb-10.10.2-winx64\\bin\\mysql.exe",
+    "mysqldumpPath": "D:\\mariadb-10.10.2-winx64\\bin\\mysqldump.exe"
+  },
   "source": {
     "host": "localhost",
     "user": "root",

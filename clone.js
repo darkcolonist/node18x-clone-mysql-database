@@ -1,10 +1,11 @@
-const mysql = require('mysql2/promise')
-    , fs = require('fs')
+const fs = require('fs')
+    , { execSync } = require('child_process')
     , moment = require('moment')
     , chalk = require('chalk');
 
+    
 const configPath = './config.json';
-const config = {};
+const storagePath = './storage';
 
 let appseconds = new Date().getTime();
 function log(...message) {
@@ -12,7 +13,7 @@ function log(...message) {
   var dur = curseconds - appseconds;
   appseconds = new Date().getTime();
   var timestamp = chalk.grey(moment().format("YYYY-MM-DD HH:mm:ss"));
-  console.log(timestamp, ...message, chalk.blueBright.dim("+" + dur + "ms"));
+  console.log(timestamp, ...message, chalk.blueBright.dim("+" + dur.toLocaleString() + "ms"));
 }
 
 function terminate(...message) {
@@ -20,7 +21,7 @@ function terminate(...message) {
   var dur = curseconds - appseconds;
   appseconds = new Date().getTime();
   var timestamp = chalk.grey(moment().format("YYYY-MM-DD HH:mm:ss"));
-  console.log(timestamp, chalk.red(...message), chalk.yellow.dim("+" + dur + "ms"));
+  console.log(timestamp, chalk.red(...message), chalk.yellow.dim("+" + dur.toLocaleString() + "ms"));
   process.exit(1);
 }
 
@@ -43,54 +44,58 @@ try {
 
 // terminate('DEV: end');
 
+function generateMysqlCommandParams(loadedConfig) {
+  return [
+    { "arg":"", "key":"database" }
+    , { "arg":"-h", "key":"host" }
+    , { "arg":"-u", "key":"user" }
+    , { "arg":"-p", "key":"password" }
+    , { "arg":"-P", "key":"port" }
+  ].map((value, id) => {
+    if(loadedConfig[value.key])
+      return `${value.arg}"${loadedConfig[value.key]}"`;
+    // else
+    //   terminate(`${value.key} not found in source config`);
+  }).join(" ");
+}
+
+function checkStoragePermissions(params) {
+  try {
+    fs.accessSync(storagePath, fs.constants.W_OK);
+    return true;
+  } catch (err) {
+    return false;
+  }
+}
+
+function runCommand(command) {
+  log('executing command', chalk.greenBright(command));
+  const output = execSync(command);
+  log('done', output.toString());
+}
+
 async function main() {
   try {
-    // Connect to source database
-    log("attempting to connect to source");
-    const sourceConnection = await mysql.createConnection(sourceConfig);
+    log('checking storage directory permissions');
 
-    // Find Target Database
-    log("attempting to connect to target");
-    const targetConnection = await mysql.createConnection({
-      host: targetConfig.host,
-      user: targetConfig.user,
-      password: targetConfig.password,
-      database: targetConfig.database,
-    });
+    if(!checkStoragePermissions())
+      terminate(`no write permissions for ${storagePath}`);
+
+    const mysqlDumpParams = generateMysqlCommandParams(sourceConfig);
+    const mysqlDumpExecCommand = `${loadedConfig.application.mysqldumpPath} ${mysqlDumpParams} > ./storage/dump.tmp`;
+    log('exporting source db to dump file');
+    runCommand(mysqlDumpExecCommand);
     
-    targetConnection.execute("SET foreign_key_checks = 0");
-
-    // Get source table names
-    const [tableRows] = await sourceConnection.execute('SHOW TABLES');
-    const tableNames = tableRows.map(row => row[`Tables_in_${sourceConfig.database}`]);
-
-    let executionCounter = 0;
-    let total = tableNames.length * 2;
-
-    // Create target tables from source tables
-    for (const tableName of tableNames) {
-      const [tableDefinitionRows] = await sourceConnection.execute(`SHOW CREATE TABLE ${tableName}`);
-      const tableDefinition = tableDefinitionRows[0]['Create Table'];
-      await targetConnection.execute(tableDefinition);
-      log(chalk.cyan(`[${++executionCounter}/${total}]`),`created table ${tableName} in target successfully`);
-    }
-
-    // Migrate data from source tables to target tables
-    for (const tableName of tableNames) {
-      await targetConnection.execute(`INSERT INTO ${targetConfig.database}.${tableName} SELECT * FROM ${sourceConfig.database}.${tableName}`);
-      log(chalk.cyan(`[${++executionCounter}/${total}]`), `transferred data to table ${tableName} in target successfully`);
-    }
-
-    targetConnection.execute("SET foreign_key_checks = 1");
-
-    log(chalk.green('Database copied successfully'));
-
-    // Close connections
-    await sourceConnection.end();
-    await targetConnection.end();
+    const mysqlParams = generateMysqlCommandParams(targetConfig);
+    const mysqlExecCommand = `${loadedConfig.application.mysqlPath} ${mysqlParams} < ./storage/dump.tmp`;
+    log('importing dump file to target db');
+    runCommand(mysqlExecCommand);
+    terminate('migration completed');
   } catch (error) {
-    terminate(error);
-    process.exit(1);
+    // terminate(error);
+    terminate(error.stack);
+    // log(chalk.redBright(error.stack));
+    // process.exit(1);
   }
 }
 
