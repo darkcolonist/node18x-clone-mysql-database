@@ -150,7 +150,7 @@ async function runCommand(command, intervalFunction) {
 function printProgress(progress) {
   var timestamp = chalk.grey(moment().format("YYYY-MM-DD HH:mm:ss"));
   var heading = chalk.blue('stream');
-  // process.stdout.clearLine();
+  process.stdout.clearLine();
   process.stdout.cursorTo(0);
   process.stdout.write(`${timestamp} ${heading} ${progress}`);
 }
