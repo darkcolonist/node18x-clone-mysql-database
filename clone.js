@@ -2,17 +2,20 @@ const fs = require('fs')
     , { exec } = require('child_process')
     , moment = require('moment')
     , mysql = require('mysql2/promise')
+    , input = require('readline-sync')
     , chalk = require('chalk');
 
-    
-const configPath = './config.json';
+
+const configPathDefault = './config.json';
 const storagePath = './storage';
 const dumpFile = 'dump.tmp';
 const dumpFileName = `${storagePath}/${dumpFile}`;
 const intervalMs = 500;
 const pauseMs = 3000;
-
 let appseconds = new Date().getTime();
+
+let configPathSpecified = input.question('enter absolute config file (./config.json): ');
+let configPath = configPathSpecified || configPathDefault;
 
 function log(...message) {
   var curseconds = new Date().getTime();
@@ -40,7 +43,7 @@ try {
   loadedConfig = require(configPath);
   log(`${configPath} file loaded successfully`);
 } catch (e) {
-  terminate("malformed loadedConfig file in", args.file, e);
+  terminate("malformed loadedConfig file in", configPath, e);
 }
 
 // terminate('DEV: end');
@@ -187,6 +190,23 @@ async function mysqldumpRoutine(loadedConfig){
   // }
 }
 
+function beforeProcessConfirmation(){
+  const confirmationMessage = `\n+-----------------------------------`
+    + `\n| ` + chalk.bgYellow('WARNING: ABOUT TO MIGRATE')
+    + `\n|  source: mysql://${loadedConfig.source.host}/${loadedConfig.source.database}`
+    + `\n|  target: mysql://${loadedConfig.target.host}/${loadedConfig.target.database}`
+    + `\n|  `
+    + `\n|  ` + chalk.bgRed('*** ALL DATA IN TARGET WILL BE DELETED ***')
+    + `\n|  `
+    + `\n|  you need to explicitly type ${chalk.greenBright('YES')} to proceed`
+    + `\n+-----------------------------------`;
+  log(confirmationMessage);
+  const processProceedConfirmationResult = input.question("> ",);
+  if (processProceedConfirmationResult !== "YES") {
+    terminate('process cancelled');
+  }
+}
+
 async function mysqlImportRoutine(loadedConfig){
   const mysqlParams = generateMysqlCommandParams(loadedConfig.target);
   const mysqlExecCommand = `${loadedConfig.application.mysqlPath} ${mysqlParams} < ${dumpFileName}`;
@@ -228,5 +248,7 @@ async function main() {
     // process.exit(1);
   }
 }
+
+beforeProcessConfirmation();
 
 main();
