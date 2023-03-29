@@ -12,6 +12,12 @@ const dumpFile = 'dump.tmp';
 const dumpFileName = `${storagePath}/${dumpFile}`;
 const intervalMs = 500;
 const pauseMs = 3000;
+
+const sanitizeReplacement = "******";
+const sanitizeKeys = [
+  "user", "password"
+];
+
 let appseconds = new Date().getTime();
 
 let configPathSpecified = input.question('enter absolute config file (./config.json): ');
@@ -35,7 +41,7 @@ function terminate(...message) {
 }
 
 if (!fs.existsSync(configPath)) {
-  terminate(`${configPath} not found.`, `make your own copy from ${configPath}.example then configure it based on your system spec.`);
+  terminate(`${configPath} not found.`, `make your own copy from ${configPathDefault}.example as seen in the root directory then configure it based on your system spec.`);
 }
 
 var loadedConfig = {};
@@ -116,6 +122,26 @@ async function getFileSizeInMB(filename){
   });
 }
 
+function sanitizeCommandForPublicDisplay(commandString){
+  let sanitized = commandString;
+
+  const toSanitize = [];
+
+  sanitizeKeys.map((val, i) => {
+    if(loadedConfig.source[val] && loadedConfig.source[val].trim())
+      toSanitize.push(loadedConfig.source[val]);
+
+    if (loadedConfig.target[val] && loadedConfig.target[val].trim())
+      toSanitize.push(loadedConfig.target[val]);
+  });
+
+  toSanitize.map((val, i) => {
+    sanitized = sanitized.replace(val, sanitizeReplacement);
+  });
+
+  return sanitized;
+}
+
 async function runCommand(command, intervalFunction) {
   // execSync(command); // blocking code
   
@@ -129,7 +155,7 @@ async function runCommand(command, intervalFunction) {
   }
 
   return new Promise((resolve, reject) => { // non-blocking code
-    log('executing command', chalk.green(command));
+    log('executing command', chalk.green(sanitizeCommandForPublicDisplay(command)));
     exec(command, (error, stdout, stderr) => {
       if(error)
         terminate(error);
@@ -217,7 +243,11 @@ async function mysqlImportRoutine(loadedConfig){
     let elapsedTime = new Date().getTime();
     let elapsed = elapsedTime - routineStart;
     const dbSize = await getDbSize(loadedConfig.target);
-    printProgress(`target db size: ${dbSize.toLocaleString()}MB ${chalk.blueBright.dim("+"+elapsed.toLocaleString()+"ms")}`);
+
+    if(dbSize)
+      printProgress(`target db size: ${dbSize.toLocaleString()}MB ${chalk.blueBright.dim("+"+elapsed.toLocaleString()+"ms")}`);
+    else
+      printProgress(`checking db size, please wait ${chalk.blueBright.dim("+" + elapsed.toLocaleString() + "ms")}`);
   }
 
   await runCommand(mysqlExecCommand, mysqlImportCheckerFunction);
