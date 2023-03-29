@@ -78,31 +78,45 @@ function checkStoragePermissions(params) {
   }
 }
 
-async function getDbSize(dbConfig){
+async function runQuery(dbConnectionConfig, statement){
   const ourConnection = await mysql.createConnection({
-    host: dbConfig.host,
-    user: dbConfig.user,
-    password: dbConfig.password,
-    database: dbConfig.database,
+    host: dbConnectionConfig.host,
+    user: dbConnectionConfig.user,
+    password: dbConnectionConfig.password,
+    database: dbConnectionConfig.database,
   });
 
-  // const statement = `SELECT table_schema "db",
-  //           ROUND(SUM(data_length + index_length) / 1024 / 1024, 1) "size" 
-  //   FROM information_schema.tables
-  //   GROUP BY table_schema
-  //   HAVING table_schema = '${dbConfig.database}';`;
+  let result;
+
+  try {
+    const [rows] = await ourConnection.execute(statement);
+    result = rows;
+  } finally {
+    await ourConnection.end();
+  }
+
+  return result;
+}
+
+async function verifyDbConnection(dbConnectionConfig) {
+  const statement = `SELECT TRUE;`;
+
+  try {
+    await runQuery(dbConnectionConfig, statement);
+    return true;
+  } catch (error) {
+    return false;
+  }
+}
+
+async function getDbSize(dbConfig){
   const statement = `SELECT
     SUM(ROUND(((DATA_LENGTH + INDEX_LENGTH) / 1024 / 1024), 2)) AS "size"
     FROM INFORMATION_SCHEMA.TABLES
     WHERE
     TABLE_SCHEMA = "${dbConfig.database}";`;
-  // const statement = `SELECT
-  //   SUM(((DATA_LENGTH + INDEX_LENGTH) / 1024 / 1024)) AS "size"
-  //   FROM INFORMATION_SCHEMA.TABLES
-  //   WHERE
-  //   TABLE_SCHEMA = "${dbConfig.database}";`;
-
-  const [ rows ] = await ourConnection.execute(statement);
+  
+  const rows = await runQuery(dbConfig, statement);
 
   if(rows.length > 0)
     return rows[0].size;
@@ -253,10 +267,31 @@ async function mysqlImportRoutine(loadedConfig){
   await runCommand(mysqlExecCommand, mysqlImportCheckerFunction);
 }
 
-async function main() {
-  // await somePrintExperiment();
+async function verifyConnections() {
+  printProgress('verifying connection to source...');
+  const sourceResult = await verifyDbConnection(loadedConfig.source);
+  printProgress('');
+  if (!sourceResult)
+  log(`verifying connection to source... ${chalk.redBright('FAILED')}`);
+  else
+  log(`verifying connection to source... ${chalk.greenBright('success')}`);
+  
+  printProgress('verifying connection to target...');
+  const targetResult = await verifyDbConnection(loadedConfig.target);
+  printProgress('');
+  if (!targetResult)
+    log(`verifying connection to target... ${chalk.redBright('FAILED')}`);
+  else
+    log(`verifying connection to target... ${chalk.greenBright('success')}`);
 
+  if(!sourceResult || !targetResult)
+    terminate('unable to proceed');
+}
+
+async function main() {
   try {
+    await verifyConnections();
+    beforeProcessConfirmation();
     log('checking storage directory permissions');
 
     if(!checkStoragePermissions())
@@ -278,7 +313,5 @@ async function main() {
     // process.exit(1);
   }
 }
-
-beforeProcessConfirmation();
 
 main();
